@@ -620,8 +620,9 @@ async def reject_payment(payment_id: str, user=Depends(require_admin)):
 async def track_candidate(q: str):
     candidate = await db.candidates.find_one(
         {"$or": [
-            {"passport_number": {"$regex": f"^{q}$", "$options": "i"}},
-            {"application_id": {"$regex": f"^{q}$", "$options": "i"}}
+            {"passport_number": {"$regex": q, "$options": "i"}},
+            {"application_id": {"$regex": q, "$options": "i"}},
+            {"name": {"$regex": q, "$options": "i"}}
         ]},
         {"_id": 0}
     )
