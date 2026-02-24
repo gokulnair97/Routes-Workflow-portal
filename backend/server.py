@@ -93,6 +93,17 @@ class LockStageRequest(BaseModel):
     stage: str
     lock: bool
 
+class DueDateUpdate(BaseModel):
+    stage: str
+    due_date: str
+
+class QuickActionRequest(BaseModel):
+    stage: str
+    action: str
+    due_date: Optional[str] = None
+    remarks: Optional[str] = None
+    lock: Optional[bool] = None
+
 # ===== Auth helpers =====
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
