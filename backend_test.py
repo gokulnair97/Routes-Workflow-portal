@@ -466,6 +466,11 @@ def main():
         tester.test_public_candidate_tracker,
         tester.test_audit_logs,
         tester.test_stage_management,
+        # NEW NOTIFICATION & QUICK ACTION TESTS
+        tester.test_notifications_endpoint,
+        tester.test_quick_action_endpoint,
+        tester.test_due_date_endpoint,
+        tester.test_notifications_with_overdue,
     ]
     
     for test in tests:
