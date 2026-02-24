@@ -15,7 +15,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   Plus, LogOut, Plane, Search, FileText, Package, ArrowRight,
   ArrowLeftRight, DoorOpen, Settings, Lock, CheckCircle2, Circle,
-  AlertTriangle, Users, X, ChevronDown
+  AlertTriangle, Users, X, ChevronDown, Bell
 } from "lucide-react";
 
 const STAGES = [
