@@ -3,17 +3,19 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import api from "@/lib/api";
 import { toast } from "sonner";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   LayoutDashboard, Search, CreditCard, Users, FileText, LogOut, Plus,
   Trash2, CheckCircle2, XCircle, Clock, Shield, Lock, Unlock, Eye,
-  ChevronRight, Plane, Menu, X, Package, ArrowRight, CircleDot
+  ChevronRight, Plane, Menu, X, Package, ArrowRight, CircleDot,
+  Bell, Calendar, AlertTriangle, Timer, ChevronDown
 } from "lucide-react";
 
 const STAGES = [
@@ -23,6 +25,21 @@ const STAGES = [
   "VFS", "VISA", "Exit",
 ];
 
+const QUICK_ACTION_STAGES = [
+  "Dataflow Processing", "Prometric Preparation", "Outgoing Attestation",
+  "Medical", "VFS", "VISA", "Exit",
+];
+
+const SHORT_NAMES = {
+  "Dataflow Processing": "Dataflow",
+  "Prometric Preparation": "Prometric",
+  "Outgoing Attestation": "Attestation",
+  "Medical": "Medical",
+  "VFS": "VFS",
+  "VISA": "VISA",
+  "Exit": "Exit",
+};
+
 const SidebarItem = ({ icon: Icon, label, active, onClick, testId }) => (
   <button data-testid={testId} onClick={onClick} className={`sidebar-item w-full ${active ? "active" : ""}`}>
     <Icon className="w-[18px] h-[18px]" strokeWidth={1.5} />
@@ -30,11 +47,123 @@ const SidebarItem = ({ icon: Icon, label, active, onClick, testId }) => (
   </button>
 );
 
+// ===== BELL NOTIFICATION =====
+const BellNotification = ({ notifications }) => {
+  const [open, setOpen] = useState(false);
+  const total = notifications?.counts?.total || 0;
+
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen(!open)} data-testid="bell-notification-btn" className="relative p-2 rounded-xl text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors">
+        <Bell className="w-5 h-5" strokeWidth={1.5} />
+        {total > 0 && (
+          <span className="absolute -top-0.5 -right-0.5 w-4.5 h-4.5 min-w-[18px] px-1 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+            {total > 99 ? "99+" : total}
+          </span>
+        )}
+      </button>
+      <AnimatePresence>
+        {open && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+            <motion.div initial={{ opacity: 0, y: -8, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -8, scale: 0.95 }} transition={{ duration: 0.15 }}
+              className="absolute right-0 top-full mt-2 w-80 bg-white rounded-2xl border border-slate-100 shadow-xl z-50 overflow-hidden" data-testid="bell-dropdown">
+              <div className="p-4 border-b border-slate-100">
+                <p className="text-sm font-semibold text-slate-900">Notifications</p>
+                <p className="text-xs text-slate-400">{total} active alert{total !== 1 ? "s" : ""}</p>
+              </div>
+              <div className="max-h-72 overflow-y-auto">
+                {notifications?.alerts?.length > 0 ? notifications.alerts.slice(0, 15).map((a, i) => (
+                  <div key={i} className={`px-4 py-3 border-b border-slate-50 last:border-0 ${
+                    a.type === "overdue" ? "bg-red-50/50" : a.type === "due_soon" ? "bg-amber-50/50" : ""
+                  }`}>
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                        a.type === "overdue" ? "bg-red-500" : a.type === "due_soon" ? "bg-amber-500" : a.type === "pending" ? "bg-slate-400" : "bg-blue-500"
+                      }`} />
+                      <span className="text-xs font-semibold text-slate-800 truncate">{a.candidate_name}</span>
+                      <Badge variant="outline" className="text-[9px] ml-auto shrink-0 rounded-md">{a.stage}</Badge>
+                    </div>
+                    <p className="text-[11px] text-slate-500 ml-3.5">{a.message}</p>
+                  </div>
+                )) : (
+                  <div className="p-8 text-center text-xs text-slate-400">No alerts</div>
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+// ===== NOTIFICATION WIDGET =====
+const NotificationWidget = ({ notifications }) => {
+  const counts = notifications?.counts || {};
+  const alerts = notifications?.alerts || [];
+  const [showAlerts, setShowAlerts] = useState(false);
+  const items = [
+    { label: "Overdue", value: counts.overdue || 0, color: "bg-red-50 text-red-600", dot: "bg-red-500" },
+    { label: "Due Soon", value: counts.due_soon || 0, color: "bg-amber-50 text-amber-600", dot: "bg-amber-500" },
+    { label: "On Track", value: counts.on_track || 0, color: "bg-emerald-50 text-emerald-600", dot: "bg-emerald-500" },
+    { label: "Pending", value: counts.pending_files || 0, color: "bg-slate-100 text-slate-600", dot: "bg-slate-400" },
+    { label: "Waiting", value: counts.waiting_actions || 0, color: "bg-blue-50 text-blue-600", dot: "bg-blue-500" },
+  ];
+
+  return (
+    <Card className="p-5 rounded-2xl border-slate-100" data-testid="notification-widget">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+          <Bell className="w-4 h-4 text-blue-600" /> Smart Alerts
+        </h3>
+        {alerts.length > 0 && (
+          <button onClick={() => setShowAlerts(!showAlerts)} className="text-[11px] text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1" data-testid="toggle-alerts-btn">
+            {showAlerts ? "Hide" : `View ${alerts.length} alerts`}
+            <ChevronDown className={`w-3 h-3 transition-transform ${showAlerts ? "rotate-180" : ""}`} />
+          </button>
+        )}
+      </div>
+      <div className="grid grid-cols-5 gap-2 mb-4">
+        {items.map((item, i) => (
+          <div key={i} className={`p-3 rounded-xl ${item.color} text-center`} data-testid={`alert-count-${item.label.toLowerCase().replace(" ", "-")}`}>
+            <p className="text-xl font-bold">{item.value}</p>
+            <p className="text-[10px] mt-0.5 opacity-70 font-medium">{item.label}</p>
+          </div>
+        ))}
+      </div>
+      <AnimatePresence>
+        {showAlerts && alerts.length > 0 && (
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+            <div className="space-y-1.5 max-h-52 overflow-y-auto pt-2">
+              {alerts.slice(0, 15).map((a, i) => (
+                <div key={i} className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs ${
+                  a.type === "overdue" ? "bg-red-50 text-red-700" :
+                  a.type === "due_soon" ? "bg-amber-50 text-amber-700" :
+                  a.type === "pending" ? "bg-slate-50 text-slate-600" :
+                  "bg-blue-50 text-blue-700"
+                }`}>
+                  <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                    a.type === "overdue" ? "bg-red-500" : a.type === "due_soon" ? "bg-amber-500" : a.type === "pending" ? "bg-slate-400" : "bg-blue-500"
+                  }`} />
+                  <span className="font-semibold truncate">{a.candidate_name}</span>
+                  <span className="opacity-60 truncate flex-1">{a.message}</span>
+                  <Badge variant="outline" className="text-[9px] shrink-0 rounded-md">{a.stage}</Badge>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </Card>
+  );
+};
+
 // ===== OVERVIEW =====
-const Overview = ({ stats }) => (
+const Overview = ({ stats, notifications }) => (
   <div className="animate-fade-in">
     <h2 className="text-xl font-bold text-slate-900 mb-6">Dashboard</h2>
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
       {[
         { label: "Total Candidates", value: stats.total_candidates, color: "bg-blue-50 text-blue-700", icon: Users },
         { label: "Staff Members", value: stats.staff_count, color: "bg-emerald-50 text-emerald-700", icon: Shield },
@@ -50,26 +179,108 @@ const Overview = ({ stats }) => (
         </Card>
       ))}
     </div>
-    <Card className="p-5 rounded-2xl border-slate-100">
-      <h3 className="text-sm font-semibold text-slate-900 mb-4">Pipeline Distribution</h3>
-      <div className="space-y-2">
-        {STAGES.map((stage) => {
-          const count = stats.stage_counts?.[stage] || 0;
-          const total = stats.total_candidates || 1;
+    <NotificationWidget notifications={notifications} />
+  </div>
+);
+
+// ===== QUICK ACTION PANEL =====
+const QuickActionPanel = ({ candidate, onRefresh }) => {
+  const [activeAction, setActiveAction] = useState(null);
+  const [form, setForm] = useState({ due_date: "", remarks: "", lock: false });
+
+  const getStageState = (stage) => {
+    const detail = candidate.stage_details?.[stage];
+    const done = candidate.stages_completed?.includes(stage);
+    if (done || detail?.status === "completed") return "completed";
+    if (detail?.status === "in_progress") return "in_progress";
+    if (detail?.due_date) {
+      const diff = (new Date(detail.due_date) - new Date()) / (1000 * 60 * 60 * 24);
+      if (diff < 0) return "overdue";
+    }
+    return "not_started";
+  };
+
+  const stateStyles = {
+    completed: "bg-emerald-500 text-white hover:bg-emerald-600 shadow-sm shadow-emerald-200",
+    in_progress: "bg-[#1A56DB] text-white hover:bg-[#1E40AF] shadow-sm shadow-blue-200",
+    overdue: "bg-red-500 text-white hover:bg-red-600 shadow-sm shadow-red-200",
+    not_started: "bg-slate-100 text-slate-600 hover:bg-slate-200",
+  };
+
+  const handleAction = async (action) => {
+    try {
+      await api.put(`/candidates/${candidate.id}/quick-action`, {
+        stage: activeAction, action,
+        due_date: form.due_date || null,
+        remarks: form.remarks || null,
+        lock: form.lock || null,
+      });
+      toast.success(`${SHORT_NAMES[activeAction] || activeAction}: ${action}`);
+      setActiveAction(null);
+      setForm({ due_date: "", remarks: "", lock: false });
+      onRefresh();
+    } catch (err) { toast.error(err.response?.data?.detail || "Failed"); }
+  };
+
+  return (
+    <Card className="p-5 rounded-2xl border-slate-100 mt-6" data-testid="quick-action-panel">
+      <h4 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2">
+        <Timer className="w-4 h-4 text-blue-600" /> Quick Actions
+      </h4>
+      <div className="grid grid-cols-4 sm:grid-cols-7 gap-2 mb-4">
+        {QUICK_ACTION_STAGES.map((stage) => {
+          const state = getStageState(stage);
+          const isActive = activeAction === stage;
           return (
-            <div key={stage} className="flex items-center gap-3">
-              <span className="text-xs text-slate-500 w-36 truncate">{stage}</span>
-              <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                <div className="h-full bg-blue-500 rounded-full" style={{ width: `${(count / total) * 100}%`, transition: "width 0.5s ease" }} />
-              </div>
-              <span className="text-xs font-medium text-slate-600 w-6 text-right">{count}</span>
-            </div>
+            <button key={stage} onClick={() => setActiveAction(isActive ? null : stage)}
+              data-testid={`qa-btn-${stage.replace(/\s+/g, "-").toLowerCase()}`}
+              className={`relative px-2 py-2.5 rounded-xl text-[11px] font-semibold transition-all ${stateStyles[state]} ${isActive ? "ring-2 ring-offset-1 ring-blue-400" : ""}`}>
+              {SHORT_NAMES[stage] || stage}
+              {state === "overdue" && <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full ring-2 ring-white" />}
+            </button>
           );
         })}
       </div>
+      <AnimatePresence>
+        {activeAction && (
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+            <div className="p-4 bg-slate-50 rounded-xl space-y-3" data-testid="qa-form">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold text-slate-800">{activeAction}</p>
+                <Badge variant="outline" className="text-[9px] capitalize">{getStageState(activeAction).replace("_", " ")}</Badge>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-[10px] text-slate-500 uppercase tracking-wider">Due Date</Label>
+                  <Input data-testid="qa-due-date" type="date" value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} className="h-9 text-xs rounded-lg mt-1" />
+                </div>
+                <div>
+                  <Label className="text-[10px] text-slate-500 uppercase tracking-wider">Remarks</Label>
+                  <Input data-testid="qa-remarks" value={form.remarks} onChange={(e) => setForm({ ...form, remarks: e.target.value })} className="h-9 text-xs rounded-lg mt-1" placeholder="Optional notes" />
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox data-testid="qa-lock-checkbox" checked={form.lock} onCheckedChange={(v) => setForm({ ...form, lock: v })} />
+                <span className="text-xs text-slate-600">Lock stage after action</span>
+              </div>
+              <div className="flex gap-2 pt-1">
+                <Button size="sm" data-testid="qa-in-progress" onClick={() => handleAction("in_progress")} className="h-8 text-[10px] rounded-lg bg-[#1A56DB] hover:bg-[#1E40AF] px-4">
+                  In Progress
+                </Button>
+                <Button size="sm" data-testid="qa-complete" onClick={() => handleAction("completed")} className="h-8 text-[10px] rounded-lg bg-emerald-500 hover:bg-emerald-600 px-4">
+                  Complete
+                </Button>
+                <Button size="sm" variant="ghost" data-testid="qa-cancel" onClick={() => setActiveAction(null)} className="h-8 text-[10px] rounded-lg px-4 text-slate-500">
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </Card>
-  </div>
-);
+  );
+};
 
 // ===== GLOBAL SEARCH =====
 const SearchSection = () => {
@@ -87,6 +298,15 @@ const SearchSection = () => {
       setSelected(null);
     } catch { toast.error("Search failed"); }
     finally { setLoading(false); }
+  };
+
+  const refreshSelected = async () => {
+    if (!selected) return;
+    try {
+      const res = await api.get(`/admin/search?q=${encodeURIComponent(selected.name)}`);
+      const updated = res.data.find((c) => c.id === selected.id);
+      if (updated) setSelected(updated);
+    } catch {}
   };
 
   return (
@@ -113,13 +333,13 @@ const SearchSection = () => {
           ))}
         </div>
       )}
-      {selected && <FlowchartView candidate={selected} onBack={() => setSelected(null)} />}
+      {selected && <FlowchartView candidate={selected} onBack={() => setSelected(null)} onRefresh={refreshSelected} />}
       {results.length === 0 && q && !loading && <p className="text-sm text-slate-400 text-center py-10">No results found</p>}
     </div>
   );
 };
 
-const FlowchartView = ({ candidate, onBack }) => {
+const FlowchartView = ({ candidate, onBack, onRefresh }) => {
   const c = candidate;
   const flowSteps = [
     { name: "Incoming", records: c.incoming_records, dateField: "date", icon: Package },
@@ -136,7 +356,10 @@ const FlowchartView = ({ candidate, onBack }) => {
         <h3 className="text-lg font-bold text-slate-900">{c.name}</h3>
         <p className="text-xs text-slate-400 font-mono">{c.application_id} | Passport: {c.passport_number}</p>
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+      <QuickActionPanel candidate={c} onRefresh={onRefresh} />
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
         <Card className="p-5 rounded-2xl border-slate-100">
           <h4 className="text-sm font-semibold text-slate-900 mb-5 flex items-center gap-2">
             <CircleDot className="w-4 h-4 text-blue-600" /> Document Flow
@@ -420,13 +643,23 @@ const AuditSection = () => {
 export default function AdminDashboard() {
   const [section, setSection] = useState("overview");
   const [stats, setStats] = useState({});
+  const [notifications, setNotifications] = useState({ counts: {}, alerts: [] });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  useEffect(() => {
-    api.get("/admin/dashboard-stats").then((r) => setStats(r.data)).catch(() => {});
-  }, [section]);
+  const fetchData = useCallback(async () => {
+    try {
+      const [statsRes, notifRes] = await Promise.all([
+        api.get("/admin/dashboard-stats"),
+        api.get("/notifications"),
+      ]);
+      setStats(statsRes.data);
+      setNotifications(notifRes.data);
+    } catch {}
+  }, []);
+
+  useEffect(() => { fetchData(); }, [fetchData, section]);
 
   const handleLogout = async () => {
     await logout();
@@ -477,12 +710,15 @@ export default function AdminDashboard() {
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-slate-100 px-6 py-3 flex items-center gap-4 lg:hidden">
-          <button onClick={() => setSidebarOpen(true)} data-testid="mobile-menu-btn" className="text-slate-600"><Menu className="w-5 h-5" /></button>
-          <span className="font-bold text-sm text-slate-900">Admin</span>
+        <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-slate-100 px-6 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button onClick={() => setSidebarOpen(true)} data-testid="mobile-menu-btn" className="text-slate-600 lg:hidden"><Menu className="w-5 h-5" /></button>
+            <span className="font-bold text-sm text-slate-900 lg:hidden">Admin</span>
+          </div>
+          <BellNotification notifications={notifications} />
         </header>
         <main className="flex-1 p-6 lg:p-8 max-w-5xl">
-          {section === "overview" && <Overview stats={stats} />}
+          {section === "overview" && <Overview stats={stats} notifications={notifications} />}
           {section === "search" && <SearchSection />}
           {section === "payments" && <PaymentSection />}
           {section === "staff" && <StaffSection />}
