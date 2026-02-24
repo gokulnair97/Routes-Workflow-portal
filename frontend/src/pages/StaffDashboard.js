@@ -612,7 +612,8 @@ export default function StaffDashboard() {
               <p className="text-[10px] text-slate-400">Staff Portal</p>
             </div>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            <StaffBellIcon />
             <div className="text-right hidden sm:block">
               <p className="text-xs font-medium text-slate-900">{user?.full_name}</p>
               <p className="text-[10px] text-slate-400">{user?.role}</p>
