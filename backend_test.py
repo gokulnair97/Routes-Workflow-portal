@@ -331,6 +331,109 @@ class APITester:
         )
         return success
 
+    def test_notifications_endpoint(self):
+        """Test notifications endpoint for Smart Alerts"""
+        success, response = self.run_test(
+            "Get Notifications",
+            "GET",
+            "notifications",
+            200,
+            token=self.admin_token
+        )
+        if success:
+            print(f"   Counts: {response.get('counts', {})}")
+            print(f"   Alerts: {len(response.get('alerts', []))} alerts")
+            # Verify structure
+            counts = response.get('counts', {})
+            expected_keys = ['overdue', 'due_soon', 'on_track', 'pending_files', 'waiting_actions', 'total']
+            for key in expected_keys:
+                if key not in counts:
+                    print(f"   ❌ Missing count key: {key}")
+                    return False
+            return True
+        return False
+
+    def test_quick_action_endpoint(self):
+        """Test quick action endpoint for admin"""
+        # Test with due date setting
+        from datetime import datetime, timedelta
+        future_date = (datetime.now() + timedelta(days=5)).strftime('%Y-%m-%d')
+        
+        quick_action_data = {
+            "stage": "Dataflow Processing",
+            "action": "in_progress",
+            "due_date": future_date,
+            "remarks": "Test quick action",
+            "lock": False
+        }
+        success, response = self.run_test(
+            "Quick Action - Set In Progress",
+            "PUT",
+            f"candidates/{self.test_candidate_id}/quick-action",
+            200,
+            data=quick_action_data,
+            token=self.admin_token
+        )
+        if not success:
+            return False
+
+        # Test completion action
+        complete_action = {
+            "stage": "Dataflow Processing", 
+            "action": "completed",
+            "lock": True
+        }
+        success, response = self.run_test(
+            "Quick Action - Mark Complete",
+            "PUT",
+            f"candidates/{self.test_candidate_id}/quick-action",
+            200,
+            data=complete_action,
+            token=self.admin_token
+        )
+        return success
+
+    def test_due_date_endpoint(self):
+        """Test due date setting endpoint"""
+        from datetime import datetime, timedelta
+        overdue_date = (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')
+        
+        due_date_data = {
+            "stage": "Prometric Preparation",
+            "due_date": overdue_date
+        }
+        success, response = self.run_test(
+            "Set Due Date",
+            "PUT",
+            f"candidates/{self.test_candidate_id}/due-date",
+            200,
+            data=due_date_data,
+            token=self.staff_token
+        )
+        return success
+
+    def test_notifications_with_overdue(self):
+        """Test notifications after setting overdue dates"""
+        success, response = self.run_test(
+            "Get Notifications (With Overdue)",
+            "GET",
+            "notifications",
+            200,
+            token=self.admin_token
+        )
+        if success:
+            counts = response.get('counts', {})
+            alerts = response.get('alerts', [])
+            print(f"   Overdue count: {counts.get('overdue', 0)}")
+            print(f"   Due soon count: {counts.get('due_soon', 0)}")
+            print(f"   Total alerts: {len(alerts)}")
+            
+            # Check for overdue alerts
+            overdue_alerts = [a for a in alerts if a.get('type') == 'overdue']
+            print(f"   Overdue alerts: {len(overdue_alerts)}")
+            return True
+        return False
+
     def cleanup(self):
         """Clean up test data"""
         if self.test_staff_id and self.admin_token:
