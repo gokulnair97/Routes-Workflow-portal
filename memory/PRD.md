@@ -25,7 +25,7 @@ Corporate nurse recruitment workflow management system with three secured panels
 - Public candidate status tracker
 
 ## What's Been Implemented (Feb 23, 2026)
-- Admin Panel with sidebar: Dashboard, Candidate Search (Flowchart), Payments, Staff Mgmt, Audit Logs
+- Admin Panel with sidebar: Dashboard, Candidate Search (Flowchart + Quick Actions), Payments, Staff Mgmt, Audit Logs
 - Staff Panel with tabs: Candidates, Incoming, Outgoing, Return, Exit, Stage Management
 - Public Candidate Tracker with progress stepper
 - Loading/splash page with nurse animation
@@ -39,6 +39,15 @@ Corporate nurse recruitment workflow management system with three secured panels
 - Stage locking with checkboxes (Attestation, Dataflow, Prometric, Documents)
 - Audit logging (login/logout/failed attempts with IP)
 - JWT auth with role-based access control
+- **NEW: Smart Notification & Due Date System** (replaces pipeline chart)
+  - Color-coded alert counts: Overdue (red), Due Soon (yellow), On Track (green), Pending (grey), Waiting (blue)
+  - Automatic alerts for: pending docs, dataflow not started, prometric pending, attestation not returned, payment pending, VISA waiting
+  - Bell notification icon with dropdown in both Admin and Staff dashboards
+  - Due date support for major stages (Dataflow, Prometric, Attestation, Medical, VFS, VISA)
+- **NEW: Admin Quick Action Buttons** in Candidate Profile
+  - 7 stage buttons: Dataflow, Prometric, Attestation, Medical, VFS, VISA, Exit
+  - Visual states: Grey (not started), Blue (in progress), Green (completed), Red badge (overdue)
+  - Each button can: mark status, set due date, add remarks, lock stage
 
 ## Test Results
 - Backend: 93.3% pass
