@@ -32,6 +32,116 @@ const LOCK_CHECKBOXES = [
   { label: "Documents Already Received", stage: "Return" },
 ];
 
+// ===== STAFF NOTIFICATION WIDGET =====
+const StaffNotificationBar = () => {
+  const [notif, setNotif] = useState({ counts: {}, alerts: [] });
+  const [showBell, setShowBell] = useState(false);
+
+  useEffect(() => {
+    api.get("/notifications").then((r) => setNotif(r.data)).catch(() => {});
+    const interval = setInterval(() => {
+      api.get("/notifications").then((r) => setNotif(r.data)).catch(() => {});
+    }, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const counts = notif.counts || {};
+  const total = counts.total || 0;
+  const alerts = notif.alerts || [];
+  const items = [
+    { label: "Overdue", value: counts.overdue || 0, color: "bg-red-50 text-red-600" },
+    { label: "Due Soon", value: counts.due_soon || 0, color: "bg-amber-50 text-amber-600" },
+    { label: "On Track", value: counts.on_track || 0, color: "bg-emerald-50 text-emerald-600" },
+    { label: "Pending", value: counts.pending_files || 0, color: "bg-slate-100 text-slate-600" },
+    { label: "Waiting", value: counts.waiting_actions || 0, color: "bg-blue-50 text-blue-600" },
+  ];
+
+  return (
+    <div className="mb-8">
+      <Card className="p-4 rounded-2xl border-slate-100" data-testid="staff-notification-widget">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-xs font-semibold text-slate-900 flex items-center gap-2">
+            <Bell className="w-3.5 h-3.5 text-blue-600" /> Smart Alerts
+          </h3>
+          {alerts.length > 0 && (
+            <button onClick={() => setShowBell(!showBell)} className="text-[10px] text-blue-600 font-medium" data-testid="staff-toggle-alerts">
+              {showBell ? "Hide" : `${alerts.length} alerts`}
+            </button>
+          )}
+        </div>
+        <div className="grid grid-cols-5 gap-2">
+          {items.map((item, i) => (
+            <div key={i} className={`p-2.5 rounded-lg ${item.color} text-center`}>
+              <p className="text-lg font-bold">{item.value}</p>
+              <p className="text-[9px] mt-0.5 opacity-70 font-medium">{item.label}</p>
+            </div>
+          ))}
+        </div>
+        {showBell && alerts.length > 0 && (
+          <div className="mt-3 space-y-1.5 max-h-40 overflow-y-auto">
+            {alerts.slice(0, 10).map((a, i) => (
+              <div key={i} className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] ${
+                a.type === "overdue" ? "bg-red-50 text-red-700" :
+                a.type === "due_soon" ? "bg-amber-50 text-amber-700" :
+                "bg-blue-50 text-blue-600"
+              }`}>
+                <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                  a.type === "overdue" ? "bg-red-500" : a.type === "due_soon" ? "bg-amber-500" : "bg-blue-500"
+                }`} />
+                <span className="font-medium truncate">{a.candidate_name}</span>
+                <span className="opacity-60 truncate flex-1">{a.message}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+};
+
+// ===== STAFF BELL ICON =====
+const StaffBellIcon = () => {
+  const [notif, setNotif] = useState({ counts: {} });
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    api.get("/notifications").then((r) => setNotif(r.data)).catch(() => {});
+  }, []);
+
+  const total = notif?.counts?.total || 0;
+  const alerts = notif?.alerts || [];
+
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen(!open)} data-testid="staff-bell-btn" className="relative p-2 rounded-xl text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors">
+        <Bell className="w-4.5 h-4.5" strokeWidth={1.5} />
+        {total > 0 && <span className="absolute -top-0.5 -right-0.5 min-w-[16px] px-1 h-4 bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">{total > 99 ? "99+" : total}</span>}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-xl border border-slate-100 shadow-xl z-50 overflow-hidden">
+            <div className="p-3 border-b border-slate-100">
+              <p className="text-xs font-semibold text-slate-900">Notifications</p>
+            </div>
+            <div className="max-h-60 overflow-y-auto">
+              {alerts.length > 0 ? alerts.slice(0, 10).map((a, i) => (
+                <div key={i} className={`px-3 py-2.5 border-b border-slate-50 last:border-0 ${a.type === "overdue" ? "bg-red-50/50" : ""}`}>
+                  <div className="flex items-center gap-2">
+                    <div className={`w-1.5 h-1.5 rounded-full ${a.type === "overdue" ? "bg-red-500" : a.type === "due_soon" ? "bg-amber-500" : "bg-blue-500"}`} />
+                    <span className="text-[11px] font-medium text-slate-800 truncate">{a.candidate_name}</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 ml-3.5">{a.message}</p>
+                </div>
+              )) : <div className="p-6 text-center text-[11px] text-slate-400">No alerts</div>}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
 // ===== Candidate Search Dropdown =====
 const CandidateSearchDropdown = ({ onSelect, selected, onClear, testIdPrefix }) => {
   const [term, setTerm] = useState("");
