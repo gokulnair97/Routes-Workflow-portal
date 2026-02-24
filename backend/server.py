@@ -626,6 +626,133 @@ async def reject_payment(payment_id: str, user=Depends(require_admin)):
         raise HTTPException(status_code=404, detail="Payment not found")
     return {"message": "Payment rejected"}
 
+ALERT_STAGES = ["Dataflow Processing", "Prometric Preparation", "Outgoing Attestation", "Medical", "VFS", "VISA"]
+
+# ===== Notification & Due Date Routes =====
+@api_router.get("/notifications")
+async def get_notifications(user=Depends(require_staff_or_admin)):
+    candidates = await db.candidates.find({}, {"_id": 0}).to_list(1000)
+    now = datetime.now(timezone.utc)
+    overdue = 0
+    due_soon = 0
+    on_track = 0
+    pending_files = 0
+    waiting_actions = 0
+    alerts = []
+    for c in candidates:
+        sd = c.get("stage_details", {})
+        completed = c.get("stages_completed", [])
+        current = c.get("current_stage", "")
+        cid = c["id"]
+        cname = c["name"]
+        for stage_name in ALERT_STAGES:
+            detail = sd.get(stage_name, {})
+            if detail.get("due_date"):
+                try:
+                    due = datetime.fromisoformat(detail["due_date"])
+                    if due.tzinfo is None:
+                        due = due.replace(tzinfo=timezone.utc)
+                    diff = (due - now).days
+                    if stage_name in completed:
+                        on_track += 1
+                    elif diff < 0:
+                        overdue += 1
+                        alerts.append({"type": "overdue", "candidate_id": cid, "candidate_name": cname, "stage": stage_name, "message": f"Overdue by {abs(diff)} day(s)", "days": diff})
+                    elif diff <= 3:
+                        due_soon += 1
+                        alerts.append({"type": "due_soon", "candidate_id": cid, "candidate_name": cname, "stage": stage_name, "message": f"Due in {diff} day(s)", "days": diff})
+                    else:
+                        on_track += 1
+                except Exception:
+                    pass
+        inc_count = await db.incoming_register.count_documents({"candidate_id": cid})
+        if inc_count == 0 and current == "Incoming":
+            pending_files += 1
+            alerts.append({"type": "pending", "candidate_id": cid, "candidate_name": cname, "stage": "Incoming", "message": "Pending incoming documents"})
+        if "Outgoing Attestation" in completed and "Dataflow Processing" not in completed and current != "Completed":
+            waiting_actions += 1
+            alerts.append({"type": "waiting", "candidate_id": cid, "candidate_name": cname, "stage": "Dataflow", "message": "Dataflow not started"})
+        if "Dataflow Processing" in completed and "Prometric Done" not in completed and current != "Completed":
+            waiting_actions += 1
+            alerts.append({"type": "waiting", "candidate_id": cid, "candidate_name": cname, "stage": "Prometric", "message": "Prometric pending"})
+        if "Outgoing Attestation" in completed and "Return" not in completed:
+            out_c = await db.outgoing_register.count_documents({"candidate_id": cid})
+            ret_c = await db.return_register.count_documents({"candidate_id": cid})
+            if out_c > 0 and ret_c == 0:
+                alerts.append({"type": "waiting", "candidate_id": cid, "candidate_name": cname, "stage": "Return", "message": "Attestation not returned"})
+        if current in ["Medical", "VFS", "VISA", "Exit"]:
+            pay_c = await db.payments.count_documents({"candidate_id": cid, "approved": True})
+            if pay_c == 0:
+                waiting_actions += 1
+                alerts.append({"type": "pending", "candidate_id": cid, "candidate_name": cname, "stage": "Payment", "message": "Payment pending before exit"})
+        visa_d = sd.get("VISA", {})
+        if visa_d.get("status") == "in_progress" and visa_d.get("updated_at"):
+            try:
+                upd = datetime.fromisoformat(visa_d["updated_at"])
+                if upd.tzinfo is None:
+                    upd = upd.replace(tzinfo=timezone.utc)
+                dw = (now - upd).days
+                if dw > 30:
+                    alerts.append({"type": "overdue", "candidate_id": cid, "candidate_name": cname, "stage": "VISA", "message": f"VISA waiting {dw} days"})
+            except Exception:
+                pass
+    priority_map = {"overdue": 0, "due_soon": 1, "pending": 2, "waiting": 3}
+    alerts.sort(key=lambda a: priority_map.get(a.get("type", ""), 4))
+    return {
+        "counts": {"overdue": overdue, "due_soon": due_soon, "on_track": on_track, "pending_files": pending_files, "waiting_actions": waiting_actions, "total": overdue + due_soon + pending_files + waiting_actions},
+        "alerts": alerts[:50]
+    }
+
+@api_router.put("/candidates/{candidate_id}/quick-action")
+async def quick_action(candidate_id: str, req: QuickActionRequest, user=Depends(require_admin)):
+    candidate = await db.candidates.find_one({"id": candidate_id}, {"_id": 0})
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    sd = candidate.get("stage_details", {})
+    completed = candidate.get("stages_completed", [])
+    locked = candidate.get("locked_stages", [])
+    idx = candidate.get("current_stage_index", 0)
+    if req.stage not in sd:
+        sd[req.stage] = {}
+    sd[req.stage]["status"] = req.action
+    sd[req.stage]["updated_at"] = datetime.now(timezone.utc).isoformat()
+    sd[req.stage]["updated_by"] = user.get("full_name", user["username"])
+    if req.due_date:
+        sd[req.stage]["due_date"] = req.due_date
+    if req.remarks is not None:
+        sd[req.stage]["notes"] = req.remarks
+    if req.action == "completed" and req.stage not in completed:
+        completed.append(req.stage)
+        si = WORKFLOW_STAGES.index(req.stage) if req.stage in WORKFLOW_STAGES else -1
+        if si >= idx and si + 1 < len(WORKFLOW_STAGES):
+            idx = si + 1
+    if req.lock is True and req.stage not in locked:
+        locked.append(req.stage)
+    elif req.lock is False:
+        locked = [s for s in locked if s != req.stage]
+    new_stage = WORKFLOW_STAGES[idx] if idx < len(WORKFLOW_STAGES) else "Completed"
+    await db.candidates.update_one(
+        {"id": candidate_id},
+        {"$set": {"stage_details": sd, "stages_completed": completed, "locked_stages": locked, "current_stage": new_stage, "current_stage_index": idx, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    return {"message": f"{req.stage} -> {req.action}", "current_stage": new_stage}
+
+@api_router.put("/candidates/{candidate_id}/due-date")
+async def update_due_date(candidate_id: str, req: DueDateUpdate, user=Depends(require_staff_or_admin)):
+    candidate = await db.candidates.find_one({"id": candidate_id}, {"_id": 0})
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    sd = candidate.get("stage_details", {})
+    if req.stage not in sd:
+        sd[req.stage] = {}
+    sd[req.stage]["due_date"] = req.due_date
+    sd[req.stage]["updated_at"] = datetime.now(timezone.utc).isoformat()
+    await db.candidates.update_one(
+        {"id": candidate_id},
+        {"$set": {"stage_details": sd, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    return {"message": f"Due date set for {req.stage}"}
+
 # ===== Public Routes =====
 @api_router.get("/public/track")
 async def track_candidate(q: str):
