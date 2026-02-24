@@ -626,6 +626,7 @@ export default function StaffDashboard() {
       </header>
 
       <main className="max-w-6xl mx-auto px-6 py-8">
+        <StaffNotificationBar />
         <Tabs defaultValue="candidates">
           <TabsList className="bg-white border border-slate-100 rounded-xl p-1 mb-8 flex-wrap h-auto gap-1" data-testid="staff-tabs">
             <TabsTrigger value="candidates" data-testid="tab-candidates" className="rounded-lg text-xs data-[state=active]:bg-[#1A56DB] data-[state=active]:text-white"><Users className="w-3.5 h-3.5 mr-1.5" />Candidates</TabsTrigger>
